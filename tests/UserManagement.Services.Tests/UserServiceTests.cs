@@ -339,4 +339,108 @@ public class UserServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorCode.Should().Be("REGISTRATION_ERROR");
     }
+
+    /// <summary>
+    /// Test: UpdateUserAsync with valid request returns success.
+    /// Verifies that user is retrieved, validated, and updated.
+    /// </summary>
+    [Fact]
+    public async Task UpdateUserAsync_WithValidRequest_ReturnsSuccessResult()
+    {
+        // Arrange
+        var userId = "507f1f77bcf86cd799439011";
+        var request = new UpdateUserRequest
+        {
+            Id = userId,
+            FirstName = "UpdatedName",
+            LastName = "UpdatedLast",
+            PhoneNumber = "+8801711223344"
+        };
+
+        var existingUser = new User
+        {
+            Id = userId,
+            Email = "original@example.com",
+            PasswordHash = "OriginalHash",
+            FirstName = "Original",
+            LastName = "User",
+            IsDeleted = false
+        };
+
+        _mockUserRepository
+            .Setup(repo => repo.GetByIdAsync(userId))
+            .ReturnsAsync(existingUser);
+
+        _mockUserRepository
+            .Setup(repo => repo.UpdateAsync(userId, It.IsAny<User>()))
+            .ReturnsAsync(true);
+
+        // Act
+        var result = await _userService.UpdateUserAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeTrue();
+        result.Value.Should().NotBeNull();
+        result.Value!.FirstName.Should().Be(request.FirstName);
+        result.Value.Email.Should().Be(existingUser.Email); // Should be preserved
+
+        _mockUserRepository.Verify(repo => repo.UpdateAsync(userId, It.Is<User>(u => 
+            u.FirstName == request.FirstName &&
+            u.Email == existingUser.Email &&
+            u.PasswordHash == existingUser.PasswordHash &&
+            u.IsDeleted == existingUser.IsDeleted
+        )), Times.Once);
+    }
+
+    /// <summary>
+    /// Test: UpdateUserAsync with non-existent user returns failure.
+    /// </summary>
+    [Fact]
+    public async Task UpdateUserAsync_UserNotFound_ReturnsFailureResult()
+    {
+        // Arrange
+        var userId = "nonexistent";
+        var request = new UpdateUserRequest { Id = userId };
+
+        _mockUserRepository
+            .Setup(repo => repo.GetByIdAsync(userId))
+            .ReturnsAsync((User?)null);
+
+        // Act
+        var result = await _userService.UpdateUserAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be("USER_NOT_FOUND");
+    }
+
+    /// <summary>
+    /// Test: UpdateUserAsync validation failure returns error.
+    /// </summary>
+    [Fact]
+    public async Task UpdateUserAsync_ValidationFails_ReturnsFailureResult()
+    {
+        // Arrange
+        var userId = "507f1f77bcf86cd799439011";
+        var request = new UpdateUserRequest { Id = userId, PhoneNumber = "+880invalid" };
+
+        var existingUser = new User { Id = userId, Email = "test@example.com" };
+
+        _mockUserRepository
+            .Setup(repo => repo.GetByIdAsync(userId))
+            .ReturnsAsync(existingUser);
+
+        _mockPhoneValidator
+            .Setup(v => v.ValidateAsync(It.IsAny<User>()))
+            .ReturnsAsync(Result.Failure("Invalid phone", "PHONE_ALREADY_EXISTS"));
+
+        // Act
+        var result = await _userService.UpdateUserAsync(request);
+
+        // Assert
+        result.IsSuccess.Should().BeFalse();
+        result.ErrorCode.Should().Be("PHONE_ALREADY_EXISTS");
+        
+        _mockUserRepository.Verify(repo => repo.UpdateAsync(userId, It.IsAny<User>()), Times.Never);
+    }
 }

@@ -24,4 +24,12 @@ public interface IUserService
     /// with the same email will return a failure result each time rather than creating duplicates.
     /// </remarks>
     Task<Result<RegisterUserResponse>> RegisterUserAsync(RegisterUserRequest request);
+
+    /// <summary>
+    /// Updates an existing user's profile information.
+    /// Validates business rules and preserves immutable fields (Email, Password, IsDeleted).
+    /// </summary>
+    /// <param name="request">The update request containing new user data.</param>
+    /// <returns>A Result containing UpdateUserResponse if successful.</returns>
+    Task<Result<UpdateUserResponse>> UpdateUserAsync(UpdateUserRequest request);
 }

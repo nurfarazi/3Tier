@@ -135,4 +135,105 @@ public class UserService : IUserService
                 "REGISTRATION_ERROR");
         }
     }
+
+    /// <summary>
+    /// Updates an existing user's profile information.
+    /// Performs the following steps:
+    /// 1. Verify user exists by ID
+    /// 2. Apply updates while preserving immutable fields (Email, Password, IsDeleted)
+    /// 3. Run business validators (same as RegisterUser)
+    /// 4. Persist changes to database
+    /// </summary>
+    /// <param name="request">The update request containing new user data.</param>
+    /// <returns>Success result with updated user details, or failure result.</returns>
+    public async Task<Result<UpdateUserResponse>> UpdateUserAsync(UpdateUserRequest request)
+    {
+        try
+        {
+            if (request == null)
+                return Result<UpdateUserResponse>.Failure("Update request is required", "INVALID_REQUEST");
+
+            if (string.IsNullOrWhiteSpace(request.Id))
+                return Result<UpdateUserResponse>.Failure("User ID is required", "MISSING_USER_ID");
+
+            _logger.LogInformation("Updating user with ID: {UserId}", request.Id);
+
+            // 1. Verify user exists
+            var existingUser = await _userRepository.GetByIdAsync(request.Id);
+            if (existingUser == null)
+            {
+                _logger.LogWarning("Update failed: User with ID {UserId} not found", request.Id);
+                return Result<UpdateUserResponse>.Failure(
+                    $"User with ID {request.Id} not found", 
+                    "USER_NOT_FOUND");
+            }
+
+            // 2. Prepare domain entity for validation and update
+            // We preserve Immutable Fields: Email, PasswordHash, IsDeleted, CreatedAt
+            var userToUpdate = new User
+            {
+                Id = existingUser.Id,
+                Email = existingUser.Email, // Cannot be updated
+                PasswordHash = existingUser.PasswordHash, // Cannot be updated via this flow
+                IsDeleted = existingUser.IsDeleted, // Cannot be updated via this flow
+                CreatedAt = existingUser.CreatedAt,
+                
+                // Fields that CAN be updated
+                FirstName = request.FirstName,
+                LastName = request.LastName,
+                DisplayName = request.DisplayName,
+                DateOfBirth = request.DateOfBirth,
+                PhoneNumber = request.PhoneNumber,
+                
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            // 3. Run business validators
+            foreach (var validator in _validators)
+            {
+                var validationResult = await validator.ValidateAsync(userToUpdate);
+                if (!validationResult.IsSuccess)
+                {
+                    _logger.LogWarning("Update validation failed for user {UserId}: {ErrorCode} - {ErrorMessage}", 
+                        request.Id, validationResult.ErrorCode, validationResult.ErrorMessage);
+
+                    return Result<UpdateUserResponse>.Failure(
+                        validationResult.ErrorMessage ?? "Business rule violation",
+                        validationResult.Errors,
+                        validationResult.ErrorCode);
+                }
+            }
+
+            // 4. Persist to database
+            var success = await _userRepository.UpdateAsync(request.Id, userToUpdate);
+            if (!success)
+            {
+                _logger.LogError("Database update failed for user: {UserId}", request.Id);
+                return Result<UpdateUserResponse>.Failure(
+                    "Failed to update user in database",
+                    "DATABASE_UPDATE_ERROR");
+            }
+
+            // Map to response DTO
+            var response = new UpdateUserResponse
+            {
+                UserId = userToUpdate.Id!,
+                Email = userToUpdate.Email,
+                FirstName = userToUpdate.FirstName,
+                LastName = userToUpdate.LastName,
+                DisplayName = userToUpdate.DisplayName,
+                DateOfBirth = userToUpdate.DateOfBirth,
+                PhoneNumber = userToUpdate.PhoneNumber,
+                UpdatedAt = userToUpdate.UpdatedAt
+            };
+
+            _logger.LogInformation("User updated successfully: {UserId}", request.Id);
+            return Result<UpdateUserResponse>.Success(response);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error during user update for ID: {UserId}", request?.Id);
+            return Result<UpdateUserResponse>.Failure(ex, "UPDATE_ERROR");
+        }
+    }
 }

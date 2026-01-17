@@ -148,4 +148,21 @@ public class ApiResponse
             Timestamp = DateTime.UtcNow
         };
     }
+
+    /// <summary>
+    /// Factory method to create a failed API response with multiple errors.
+    /// </summary>
+    /// <param name="message">The primary error message.</param>
+    /// <param name="errors">Additional error details.</param>
+    /// <returns>A failed API response.</returns>
+    public static ApiResponse FailureResponse(string message, List<string> errors)
+    {
+        return new ApiResponse
+        {
+            Success = false,
+            Message = message,
+            Errors = errors,
+            Timestamp = DateTime.UtcNow
+        };
+    }
 }

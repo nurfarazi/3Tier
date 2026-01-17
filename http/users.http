@@ -79,3 +79,27 @@ Content-Type: {{contentType}}
   "firstName": "Incomplete",
   "email": "incomplete@example.com"
 }
+
+### Update an existing user - Success case
+### Note: Replace {{userId}} with a real ID from a previous registration
+@userId = 507f1f77bcf86cd799439011
+PUT {{baseUrl}}/api/v1/users/{{userId}}
+Content-Type: {{contentType}}
+
+{
+  "firstName": "John Updated",
+  "lastName": "Doe Updated",
+  "displayName": "Johnny",
+  "phoneNumber": "+8801711223344",
+  "dateOfBirth": "1990-01-15"
+}
+
+### Update user - Validation error (underage)
+PUT {{baseUrl}}/api/v1/users/{{userId}}
+Content-Type: {{contentType}}
+
+{
+  "firstName": "Young",
+  "lastName": "User",
+  "dateOfBirth": "2020-01-01"
+}
