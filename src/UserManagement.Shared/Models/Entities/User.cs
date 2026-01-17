@@ -43,11 +43,31 @@ public class User
     public string LastName { get; set; } = string.Empty;
 
     /// <summary>
+    /// User's display name. Optional.
+    /// </summary>
+    [BsonElement("displayName")]
+    [BsonIgnoreIfNull]
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// User's date of birth. Optional.
+    /// </summary>
+    [BsonElement("dateOfBirth")]
+    [BsonIgnoreIfNull]
+    public DateTime? DateOfBirth { get; set; }
+
+    /// <summary>
     /// Optional phone number for contact purposes.
     /// </summary>
     [BsonElement("phoneNumber")]
     [BsonIgnoreIfNull]
     public string? PhoneNumber { get; set; }
+
+    /// <summary>
+    /// Indicates if the user account is soft-deleted.
+    /// </summary>
+    [BsonElement("isDeleted")]
+    public bool IsDeleted { get; set; } = false;
 
     /// <summary>
     /// Timestamp when the user was created (UTC).

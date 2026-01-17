@@ -69,7 +69,7 @@ public class UserController : ControllerBase
                 // Return 201 Created with Location header
                 return CreatedAtAction(
                     nameof(RegisterUser),
-                    new { userId = result.Value.UserId },
+                    new { userId = result.Value!.UserId },
                     response);
             }
 
@@ -80,6 +80,18 @@ public class UserController : ControllerBase
 
                 var response = ApiResponse<RegisterUserResponse>.FailureResponse(
                     "Email already exists",
+                    result.Errors);
+
+                return Conflict(response);
+            }
+
+            // Handle failure - phone number already exists
+            if (result.ErrorCode == "PHONE_ALREADY_EXISTS")
+            {
+                _logger.LogWarning("Registration failed: Phone number already exists: {PhoneNumber}", request?.PhoneNumber);
+
+                var response = ApiResponse<RegisterUserResponse>.FailureResponse(
+                    "Phone number already exists",
                     result.Errors);
 
                 return Conflict(response);

@@ -61,48 +61,73 @@ public class UserService : IUserService
 
             _logger.LogInformation("User registration started for email: {Email}", request.Email);
 
-            // Business Rule 1: Check if email already exists
-            _logger.LogInformation("Checking if email already exists: {Email}", request.Email);
-            var emailExists = await _userRepository.EmailExistsAsync(request.Email);
+            // Business Rule: Email normalization
+            var normalizedEmail = request.Email.Trim().ToLowerInvariant();
+
+            // Business Rule 1: Check if email already exists (including soft-deleted)
+            _logger.LogInformation("Checking if email already exists: {Email}", normalizedEmail);
+            var emailExists = await _userRepository.EmailExistsAsync(normalizedEmail);
 
             if (emailExists)
             {
-                _logger.LogWarning("Registration failed: Email already exists: {Email}", request.Email);
+                _logger.LogWarning("Registration failed: Email already exists: {Email}", normalizedEmail);
                 return Result<RegisterUserResponse>.Failure(
                     "Email already exists",
                     new List<string> { "A user with this email address is already registered" },
                     "EMAIL_ALREADY_EXISTS");
             }
 
+            // Business Rule: Check if mobile number already exists (if provided)
+            if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+            {
+                _logger.LogInformation("Checking if phone number already exists: {PhoneNumber}", request.PhoneNumber);
+                var phoneExists = await _userRepository.PhoneNumberExistsAsync(request.PhoneNumber);
+
+                if (phoneExists)
+                {
+                    _logger.LogWarning("Registration failed: Phone number already exists: {PhoneNumber}", request.PhoneNumber);
+                    return Result<RegisterUserResponse>.Failure(
+                        "Phone number already exists",
+                        new List<string> { "A user with this phone number is already registered" },
+                        "PHONE_ALREADY_EXISTS");
+                }
+            }
+
             // Hash password using BCrypt
-            _logger.LogInformation("Hashing password for user: {Email}", request.Email);
+            _logger.LogInformation("Hashing password for user: {Email}", normalizedEmail);
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12);
 
             // Create User domain entity
-            _logger.LogInformation("Creating user entity for email: {Email}", request.Email);
+            _logger.LogInformation("Creating user entity for email: {Email}", normalizedEmail);
             var user = new User
             {
-                Email = request.Email,
+                Email = normalizedEmail,
                 PasswordHash = passwordHash,
                 FirstName = request.FirstName,
                 LastName = request.LastName,
+                DisplayName = request.DisplayName,
+                DateOfBirth = request.DateOfBirth,
                 PhoneNumber = request.PhoneNumber,
                 CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                UpdatedAt = DateTime.UtcNow,
+                IsDeleted = false
             };
 
             // Persist to database
-            _logger.LogInformation("Persisting user to database: {Email}", request.Email);
+            _logger.LogInformation("Persisting user to database: {Email}", normalizedEmail);
             var createdUser = await _userRepository.AddAsync(user);
 
             // Map to response DTO
-            _logger.LogInformation("User registration completed successfully for email: {Email}", request.Email);
+            _logger.LogInformation("User registration completed successfully for email: {Email}", normalizedEmail);
             var response = new RegisterUserResponse
             {
                 UserId = createdUser.Id,
                 Email = createdUser.Email,
                 FirstName = createdUser.FirstName,
                 LastName = createdUser.LastName,
+                DisplayName = createdUser.DisplayName,
+                DateOfBirth = createdUser.DateOfBirth,
+                PhoneNumber = createdUser.PhoneNumber,
                 CreatedAt = createdUser.CreatedAt
             };
 

@@ -19,8 +19,18 @@ public interface IUserRepository : IRepository<User>
     /// <summary>
     /// Checks if a user with the given email already exists.
     /// Used for validation during registration to ensure email uniqueness.
+    /// Includes both active and soft-deleted users.
     /// </summary>
     /// <param name="email">The email address to check for existence.</param>
     /// <returns>True if a user with this email exists; false otherwise.</returns>
     Task<bool> EmailExistsAsync(string email);
+
+    /// <summary>
+    /// Checks if a user with the given phone number already exists.
+    /// Used for validation during registration to ensure phone number uniqueness.
+    /// Includes both active and soft-deleted users.
+    /// </summary>
+    /// <param name="phoneNumber">The phone number to check for existence.</param>
+    /// <returns>True if a user with this phone number exists; false otherwise.</returns>
+    Task<bool> PhoneNumberExistsAsync(string phoneNumber);
 }

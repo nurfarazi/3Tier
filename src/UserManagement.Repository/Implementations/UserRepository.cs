@@ -57,6 +57,7 @@ public class UserRepository : BaseRepository<User>, IUserRepository
     /// <summary>
     /// Checks if a user with the given email already exists.
     /// Used during registration validation to ensure email uniqueness.
+    /// This check is case-insensitive.
     /// </summary>
     /// <param name="email">The email address to check.</param>
     /// <returns>True if a user with this email exists; false otherwise.</returns>
@@ -64,19 +65,47 @@ public class UserRepository : BaseRepository<User>, IUserRepository
     {
         try
         {
-            Logger.LogInformation("Checking if email exists: {Email}", email);
+            var normalizedEmail = email.Trim().ToLowerInvariant();
+            Logger.LogInformation("Checking if email exists (normalized): {Email}", normalizedEmail);
 
-            var filter = Builders<User>.Filter.Eq(u => u.Email, email);
+            var filter = Builders<User>.Filter.Eq(u => u.Email, normalizedEmail);
             var count = await Collection.CountDocumentsAsync(filter);
 
             var exists = count > 0;
-            Logger.LogInformation("Email existence check result for {Email}: {Exists}", email, exists);
+            Logger.LogInformation("Email existence check result for {Email}: {Exists}", normalizedEmail, exists);
 
             return exists;
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Error checking email existence: {Email}", email);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Checks if a user with the given phone number already exists.
+    /// Used during registration validation to ensure phone number uniqueness.
+    /// </summary>
+    /// <param name="phoneNumber">The phone number to check.</param>
+    /// <returns>True if a user with this phone number exists; false otherwise.</returns>
+    public async Task<bool> PhoneNumberExistsAsync(string phoneNumber)
+    {
+        try
+        {
+            Logger.LogInformation("Checking if phone number exists: {PhoneNumber}", phoneNumber);
+
+            var filter = Builders<User>.Filter.Eq(u => u.PhoneNumber, phoneNumber);
+            var count = await Collection.CountDocumentsAsync(filter);
+
+            var exists = count > 0;
+            Logger.LogInformation("Phone number existence check result for {PhoneNumber}: {Exists}", phoneNumber, exists);
+
+            return exists;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error checking phone number existence: {PhoneNumber}", phoneNumber);
             throw;
         }
     }
@@ -97,7 +126,13 @@ public class UserRepository : BaseRepository<User>, IUserRepository
                 new CreateIndexOptions { Unique = true }
             );
 
-            await Collection.Indexes.CreateOneAsync(emailIndexModel);
+            // Create unique index on PhoneNumber field (sparse since it's optional)
+            var phoneIndexModel = new CreateIndexModel<User>(
+                Builders<User>.IndexKeys.Ascending(u => u.PhoneNumber),
+                new CreateIndexOptions { Unique = true, Sparse = true }
+            );
+
+            await Collection.Indexes.CreateManyAsync(new[] { emailIndexModel, phoneIndexModel });
 
             Logger.LogInformation("Indexes created successfully for User collection");
         }

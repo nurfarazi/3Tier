@@ -28,7 +28,17 @@ public class RegisterUserRequest
     public string LastName { get; set; } = string.Empty;
 
     /// <summary>
-    /// Optional phone number for contact purposes.
+    /// Optional display name for the user profile.
+    /// </summary>
+    public string? DisplayName { get; set; }
+
+    /// <summary>
+    /// User's date of birth. Must be 13+ years old if provided.
+    /// </summary>
+    public DateTime? DateOfBirth { get; set; }
+
+    /// <summary>
+    /// Optional phone number for contact purposes. Must follow E.164 and be unique.
     /// </summary>
     public string? PhoneNumber { get; set; }
 }
