@@ -17,6 +17,7 @@ public class UserService : IUserService
 {
     private readonly IUserRepository _userRepository;
     private readonly IEnumerable<IBusinessValidator<User>> _validators;
+    private readonly IEmailService _emailService;
     private readonly ILogger<UserService> _logger;
 
     /// <summary>
@@ -28,10 +29,12 @@ public class UserService : IUserService
     public UserService(
         IUserRepository userRepository, 
         IEnumerable<IBusinessValidator<User>> validators,
+        IEmailService emailService,
         ILogger<UserService> logger)
     {
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
         _validators = validators ?? throw new ArgumentNullException(nameof(validators));
+        _emailService = emailService ?? throw new ArgumentNullException(nameof(emailService));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -124,6 +127,12 @@ public class UserService : IUserService
                 PhoneNumber = createdUser.PhoneNumber,
                 CreatedAt = createdUser.CreatedAt
             };
+
+            // Send welcome email (asynchronously, don't wait if not necessary but we are in async method)
+            // We don't await this if we want it to be fire-and-forget, but since it's a small task, 
+            // and we want to ensure it's logged correctly, we can await it or use Task.Run.
+            // For now, let's await it to keep it simple, given the implementation handles exceptions.
+            await _emailService.SendWelcomeEmailAsync(createdUser);
 
             return Result<RegisterUserResponse>.Success(response);
         }

@@ -100,7 +100,7 @@ builder.Services.AddAuthorization(options =>
 // Layer Registration (Dependency Injection)
 // Order: Repository -> Services -> No more dependencies
 builder.Services.AddRepositoryLayer(builder.Configuration);
-builder.Services.AddServiceLayer();
+builder.Services.AddServiceLayer(builder.Configuration);
 
 // ==================== Build Application ====================
 var app = builder.Build();
