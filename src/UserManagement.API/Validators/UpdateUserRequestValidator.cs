@@ -50,8 +50,8 @@ public class UpdateUserRequestValidator : AbstractValidator<UpdateUserRequest>
     private void ConfigurePhoneValidation()
     {
         RuleFor(x => x.PhoneNumber)
-            .Matches(@"^\+8801[3-9]\d{8}$")
-            .WithMessage("Phone number must be a valid Bangladesh mobile number (+8801XXXXXXXXX)")
+            .Matches(@"^\+?[0-9]{7,15}$")
+            .WithMessage("Phone number must be between 7 and 15 digits and can optionally start with '+'")
             .When(x => !string.IsNullOrWhiteSpace(x.PhoneNumber));
     }
 
