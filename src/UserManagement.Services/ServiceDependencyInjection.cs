@@ -1,6 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using UserManagement.Services.Implementations;
 using UserManagement.Services.Validators;
+using UserManagement.Shared.Configuration;
 using UserManagement.Shared.Contracts.Services;
 using UserManagement.Shared.Contracts.Validators;
 using UserManagement.Shared.Models.Entities;
@@ -24,6 +25,8 @@ public static class ServiceDependencyInjection
         // Register all services as scoped
         // Scoped means a new instance per HTTP request in web context
         services.AddScoped<IUserService, UserService>();
+        services.AddScoped<IJwtTokenService, JwtTokenService>();
+        services.AddScoped<IAuthenticationService, AuthenticationService>();
 
         // Register Business Validators
         services.AddScoped<IBusinessValidator<User>, EmailUniquenessValidator>();

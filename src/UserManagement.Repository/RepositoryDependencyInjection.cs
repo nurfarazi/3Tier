@@ -57,6 +57,7 @@ public static class RepositoryDependencyInjection
         // 4. Register Repositories as Scoped
         // Repositories should be scoped to HTTP request in web context
         services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IRefreshTokenRepository, RefreshTokenRepository>();
 
         return services;
     }

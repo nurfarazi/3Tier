@@ -236,4 +236,145 @@ public class UserService : IUserService
             return Result<UpdateUserResponse>.Failure(ex, "UPDATE_ERROR");
         }
     }
+
+    /// <summary>
+    /// Retrieves a single user by ID.
+    /// </summary>
+    /// <param name="userId">The ID of the user to retrieve.</param>
+    /// <returns>Result containing user data as UserDto, or failure if not found.</returns>
+    public async Task<Result<UserDto>> GetUserByIdAsync(string userId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+                return Result<UserDto>.Failure("User ID is required", "MISSING_USER_ID");
+
+            _logger.LogInformation("Retrieving user by ID: {UserId}", userId);
+
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null)
+            {
+                _logger.LogWarning("User not found with ID: {UserId}", userId);
+                return Result<UserDto>.Failure($"User with ID {userId} not found", "USER_NOT_FOUND");
+            }
+
+            // Exclude soft-deleted users
+            if (user.IsDeleted)
+            {
+                _logger.LogWarning("User is deleted: {UserId}", userId);
+                return Result<UserDto>.Failure("User not found", "USER_NOT_FOUND");
+            }
+
+            var userDto = MapUserToDto(user);
+            _logger.LogInformation("User retrieved successfully: {UserId}", userId);
+            return Result<UserDto>.Success(userDto);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error retrieving user by ID: {UserId}", userId);
+            return Result<UserDto>.Failure(ex, "RETRIEVAL_ERROR");
+        }
+    }
+
+    /// <summary>
+    /// Retrieves a paginated list of users with filtering and sorting.
+    /// </summary>
+    /// <param name="request">Pagination, filtering, and sorting parameters.</param>
+    /// <returns>Result containing paged user data, or failure if error occurs.</returns>
+    public async Task<Result<PagedResult<UserDto>>> GetUsersAsync(GetUsersRequest request)
+    {
+        try
+        {
+            if (request == null)
+                return Result<PagedResult<UserDto>>.Failure("Request is required", "INVALID_REQUEST");
+
+            _logger.LogInformation("Retrieving paged users: Page {PageNumber}, Size {PageSize}",
+                request.PageNumber, request.PageSize);
+
+            // Get paged users from repository
+            var pagedUsers = await _userRepository.GetPagedAsync(request);
+
+            // Map to UserDto
+            var userDtos = pagedUsers.Items.Select(MapUserToDto).ToList();
+
+            // Create paged result of DTOs
+            var pagedResult = PagedResult<UserDto>.Create(
+                userDtos,
+                pagedUsers.TotalCount,
+                pagedUsers.PageNumber,
+                pagedUsers.PageSize);
+
+            _logger.LogInformation("Retrieved {Count} users out of {Total}",
+                userDtos.Count, pagedUsers.TotalCount);
+
+            return Result<PagedResult<UserDto>>.Success(pagedResult);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error retrieving paged users");
+            return Result<PagedResult<UserDto>>.Failure(ex, "RETRIEVAL_ERROR");
+        }
+    }
+
+    /// <summary>
+    /// Soft deletes a user (marks as deleted without physical removal).
+    /// </summary>
+    /// <param name="userId">The ID of the user to delete.</param>
+    /// <returns>Result indicating success or failure.</returns>
+    public async Task<Result> SoftDeleteUserAsync(string userId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+                return Result.Failure("User ID is required", "MISSING_USER_ID");
+
+            _logger.LogInformation("Soft deleting user: {UserId}", userId);
+
+            // Verify user exists
+            var user = await _userRepository.GetByIdAsync(userId);
+            if (user == null)
+            {
+                _logger.LogWarning("User not found for deletion: {UserId}", userId);
+                return Result.Failure($"User with ID {userId} not found", "USER_NOT_FOUND");
+            }
+
+            // Soft delete
+            var success = await _userRepository.SoftDeleteAsync(userId);
+            if (success)
+            {
+                _logger.LogInformation("User soft deleted successfully: {UserId}", userId);
+                return Result.Success();
+            }
+            else
+            {
+                _logger.LogError("Failed to soft delete user: {UserId}", userId);
+                return Result.Failure("Failed to delete user", "DELETION_FAILED");
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error soft deleting user: {UserId}", userId);
+            return Result.Failure(ex, "DELETION_ERROR");
+        }
+    }
+
+    /// <summary>
+    /// Maps a User entity to UserDto (without sensitive data).
+    /// </summary>
+    private static UserDto MapUserToDto(User user)
+    {
+        return new UserDto
+        {
+            Id = user.Id,
+            Email = user.Email,
+            FirstName = user.FirstName,
+            LastName = user.LastName,
+            DisplayName = user.DisplayName,
+            DateOfBirth = user.DateOfBirth,
+            PhoneNumber = user.PhoneNumber,
+            Role = user.Role,
+            CreatedAt = user.CreatedAt,
+            UpdatedAt = user.UpdatedAt
+        };
+    }
 }

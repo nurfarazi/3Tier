@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using MongoDB.Driver;
 using UserManagement.Shared.Contracts.Repositories;
+using UserManagement.Shared.Models.DTOs;
 using UserManagement.Shared.Models.Entities;
 
 namespace UserManagement.Repository.Implementations;
@@ -111,6 +112,153 @@ public class UserRepository : BaseRepository<User>, IUserRepository
     }
 
     /// <summary>
+    /// Retrieves a paginated list of users with filtering and sorting support.
+    /// </summary>
+    /// <param name="request">Pagination, filtering, and sorting parameters.</param>
+    /// <returns>Paged result containing users and pagination metadata.</returns>
+    public async Task<PagedResult<User>> GetPagedAsync(GetUsersRequest request)
+    {
+        try
+        {
+            // Validate request
+            if (request == null)
+            {
+                Logger.LogWarning("GetPagedAsync called with null request");
+                return PagedResult<User>.Create(new List<User>(), 0, 1, 10);
+            }
+
+            // Ensure pagination parameters are valid
+            var pageNumber = Math.Max(1, request.PageNumber);
+            var pageSize = Math.Max(1, Math.Min(request.PageSize, 100)); // Cap at 100
+
+            Logger.LogInformation("Retrieving paged users: Page {PageNumber}, Size {PageSize}, Search: {SearchTerm}, Sort: {SortBy} {SortOrder}",
+                pageNumber, pageSize, request.SearchTerm, request.SortBy, request.SortOrder);
+
+            // Build filter
+            var filters = new List<FilterDefinition<User>>();
+
+            // Exclude deleted users unless explicitly requested
+            if (!request.IncludeDeleted)
+            {
+                filters.Add(Builders<User>.Filter.Eq(u => u.IsDeleted, false));
+            }
+
+            // Search filter (by name or email)
+            if (!string.IsNullOrWhiteSpace(request.SearchTerm))
+            {
+                var searchTerm = request.SearchTerm.Trim();
+                var searchFilter = Builders<User>.Filter.Or(
+                    Builders<User>.Filter.Regex(u => u.Email, $".*{searchTerm}.*"),
+                    Builders<User>.Filter.Regex(u => u.FirstName, $".*{searchTerm}.*"),
+                    Builders<User>.Filter.Regex(u => u.LastName, $".*{searchTerm}.*")
+                );
+                filters.Add(searchFilter);
+            }
+
+            // Role filter
+            if (!string.IsNullOrWhiteSpace(request.Role))
+            {
+                filters.Add(Builders<User>.Filter.Eq(u => u.Role, request.Role));
+            }
+
+            // Date range filter
+            if (request.CreatedAfter.HasValue)
+            {
+                filters.Add(Builders<User>.Filter.Gte(u => u.CreatedAt, request.CreatedAfter.Value));
+            }
+
+            if (request.CreatedBefore.HasValue)
+            {
+                filters.Add(Builders<User>.Filter.Lte(u => u.CreatedAt, request.CreatedBefore.Value));
+            }
+
+            var combinedFilter = filters.Any()
+                ? Builders<User>.Filter.And(filters)
+                : Builders<User>.Filter.Empty;
+
+            // Get total count
+            var totalCount = (int)await Collection.CountDocumentsAsync(combinedFilter);
+
+            // Build sort order
+            SortDefinition<User> sortDefinition = request.SortBy?.ToLowerInvariant() switch
+            {
+                "email" => request.SortOrder?.ToLowerInvariant() == "asc"
+                    ? Builders<User>.Sort.Ascending(u => u.Email)
+                    : Builders<User>.Sort.Descending(u => u.Email),
+                "firstname" => request.SortOrder?.ToLowerInvariant() == "asc"
+                    ? Builders<User>.Sort.Ascending(u => u.FirstName)
+                    : Builders<User>.Sort.Descending(u => u.FirstName),
+                "lastname" => request.SortOrder?.ToLowerInvariant() == "asc"
+                    ? Builders<User>.Sort.Ascending(u => u.LastName)
+                    : Builders<User>.Sort.Descending(u => u.LastName),
+                "role" => request.SortOrder?.ToLowerInvariant() == "asc"
+                    ? Builders<User>.Sort.Ascending(u => u.Role)
+                    : Builders<User>.Sort.Descending(u => u.Role),
+                _ => request.SortOrder?.ToLowerInvariant() == "asc"
+                    ? Builders<User>.Sort.Ascending(u => u.CreatedAt)
+                    : Builders<User>.Sort.Descending(u => u.CreatedAt)
+            };
+
+            // Get paged results
+            var skip = (pageNumber - 1) * pageSize;
+            var users = await Collection
+                .Find(combinedFilter)
+                .Sort(sortDefinition)
+                .Skip(skip)
+                .Limit(pageSize)
+                .ToListAsync();
+
+            Logger.LogInformation("Retrieved {Count} users out of {Total} total", users.Count, totalCount);
+
+            return PagedResult<User>.Create(users, totalCount, pageNumber, pageSize);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error retrieving paged users");
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Soft deletes a user by setting IsDeleted = true.
+    /// The user record is not physically deleted from the database.
+    /// </summary>
+    /// <param name="userId">The ID of the user to soft delete.</param>
+    /// <returns>True if soft deletion was successful; false if user not found.</returns>
+    public async Task<bool> SoftDeleteAsync(string userId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                Logger.LogWarning("SoftDeleteAsync called with null or empty user ID");
+                return false;
+            }
+
+            Logger.LogInformation("Soft deleting user: {UserId}", userId);
+
+            var filter = Builders<User>.Filter.Eq(u => u.Id, userId);
+            var update = Builders<User>.Update
+                .Set(u => u.IsDeleted, true)
+                .Set(u => u.UpdatedAt, DateTime.UtcNow);
+
+            var result = await Collection.UpdateOneAsync(filter, update);
+
+            if (result.ModifiedCount > 0)
+                Logger.LogInformation("User soft deleted successfully: {UserId}", userId);
+            else
+                Logger.LogWarning("User not found for soft deletion: {UserId}", userId);
+
+            return result.ModifiedCount > 0;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error soft deleting user: {UserId}", userId);
+            throw;
+        }
+    }
+
+    /// <summary>
     /// Ensures that MongoDB indexes are created for optimal query performance.
     /// Should be called during application startup.
     /// </summary>
@@ -132,7 +280,37 @@ public class UserRepository : BaseRepository<User>, IUserRepository
                 new CreateIndexOptions { Unique = true, Sparse = true }
             );
 
-            await Collection.Indexes.CreateManyAsync(new[] { emailIndexModel, phoneIndexModel });
+            // Compound index on FirstName, LastName for search
+            var nameIndexModel = new CreateIndexModel<User>(
+                Builders<User>.IndexKeys
+                    .Ascending(u => u.FirstName)
+                    .Ascending(u => u.LastName)
+            );
+
+            // Index on CreatedAt for sorting
+            var createdAtIndexModel = new CreateIndexModel<User>(
+                Builders<User>.IndexKeys.Descending(u => u.CreatedAt)
+            );
+
+            // Index on Role for filtering
+            var roleIndexModel = new CreateIndexModel<User>(
+                Builders<User>.IndexKeys.Ascending(u => u.Role)
+            );
+
+            // Index on IsDeleted for excluding soft-deleted users
+            var isDeletedIndexModel = new CreateIndexModel<User>(
+                Builders<User>.IndexKeys.Ascending(u => u.IsDeleted)
+            );
+
+            await Collection.Indexes.CreateManyAsync(new[]
+            {
+                emailIndexModel,
+                phoneIndexModel,
+                nameIndexModel,
+                createdAtIndexModel,
+                roleIndexModel,
+                isDeletedIndexModel
+            });
 
             Logger.LogInformation("Indexes created successfully for User collection");
         }

@@ -32,4 +32,27 @@ public interface IUserService
     /// <param name="request">The update request containing new user data.</param>
     /// <returns>A Result containing UpdateUserResponse if successful.</returns>
     Task<Result<UpdateUserResponse>> UpdateUserAsync(UpdateUserRequest request);
+
+    /// <summary>
+    /// Retrieves a single user by ID.
+    /// </summary>
+    /// <param name="userId">The ID of the user to retrieve.</param>
+    /// <returns>A Result containing UserDto if user found, or failure if not found.</returns>
+    Task<Result<UserDto>> GetUserByIdAsync(string userId);
+
+    /// <summary>
+    /// Retrieves a paginated list of users with filtering and sorting.
+    /// Excludes soft-deleted users by default.
+    /// </summary>
+    /// <param name="request">Pagination, filtering, and sorting parameters.</param>
+    /// <returns>A Result containing PagedResult of UserDto.</returns>
+    Task<Result<PagedResult<UserDto>>> GetUsersAsync(GetUsersRequest request);
+
+    /// <summary>
+    /// Soft deletes a user (marks as deleted without physical removal).
+    /// The user can no longer log in after deletion.
+    /// </summary>
+    /// <param name="userId">The ID of the user to delete.</param>
+    /// <returns>A Result indicating success or failure.</returns>
+    Task<Result> SoftDeleteUserAsync(string userId);
 }

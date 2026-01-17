@@ -58,6 +58,8 @@ public class GlobalExceptionMiddleware
 
             // Domain-specific exceptions
             UserAlreadyExistsException userExistsEx => HandleUserAlreadyExistsException(context, userExistsEx),
+            ForbiddenException forbiddenEx => HandleForbiddenException(context, forbiddenEx),
+            InvalidTokenException tokenEx => HandleInvalidTokenException(context, tokenEx),
 
             // Generic exception -> 500 Internal Server Error
             _ => HandleGenericException(context, exception)
@@ -98,6 +100,28 @@ public class GlobalExceptionMiddleware
         return ApiResponse.FailureResponse(
             "Email already exists",
             $"A user with email '{ex.Email}' is already registered in the system");
+    }
+
+    /// <summary>
+    /// Handles ForbiddenException (authorization/permission denied).
+    /// </summary>
+    private ApiResponse HandleForbiddenException(HttpContext context, ForbiddenException ex)
+    {
+        context.Response.StatusCode = (int)HttpStatusCode.Forbidden;
+        return ApiResponse.FailureResponse(
+            ex.Message ?? "You do not have permission to access this resource",
+            "FORBIDDEN");
+    }
+
+    /// <summary>
+    /// Handles InvalidTokenException (authentication/invalid token).
+    /// </summary>
+    private ApiResponse HandleInvalidTokenException(HttpContext context, InvalidTokenException ex)
+    {
+        context.Response.StatusCode = (int)HttpStatusCode.Unauthorized;
+        return ApiResponse.FailureResponse(
+            ex.Message ?? "Invalid or expired authentication token",
+            "INVALID_TOKEN");
     }
 
     /// <summary>

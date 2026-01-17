@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using UserManagement.Shared.Contracts.Services;
 using UserManagement.Shared.Models.DTOs;
@@ -120,16 +121,20 @@ public class UserController : ControllerBase
 
     /// <summary>
     /// Updates an existing user's profile information.
+    /// Users can only update their own profile; admins can update any user.
     /// </summary>
     /// <param name="userId">The ID of the user to update.</param>
     /// <param name="request">The update request containing new user details.</param>
     /// <returns>
     /// 200 OK if update is successful with the updated user details.
+    /// 401 Unauthorized if not authenticated.
+    /// 403 Forbidden if user tries to update another user's profile (and is not admin).
     /// 404 Not Found if the user ID does not exist.
     /// 400 Bad Request if validation fails.
     /// 409 Conflict if business rules like phone uniqueness are violated.
     /// </returns>
     [HttpPut("{userId}")]
+    [Authorize]
     [ProducesResponseType(typeof(ApiResponse<UpdateUserResponse>), StatusCodes.Status200OK)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
@@ -192,6 +197,217 @@ public class UserController : ControllerBase
             var errorResponse = ApiResponse.FailureResponse(
                 "An unexpected error occurred during update",
                 "UPDATE_ERROR");
+
+            return StatusCode(StatusCodes.Status500InternalServerError, errorResponse);
+        }
+    }
+
+    /// <summary>
+    /// Retrieves a single user by ID.
+    /// Users can view their own profile; admins can view any user profile.
+    /// </summary>
+    /// <param name="userId">The ID of the user to retrieve.</param>
+    /// <returns>
+    /// 200 OK with user details if found.
+    /// 401 Unauthorized if not authenticated.
+    /// 403 Forbidden if user tries to view another user's profile (and is not admin).
+    /// 404 Not Found if user does not exist.
+    /// </returns>
+    /// <response code="200">User retrieved successfully.</response>
+    /// <response code="401">Not authenticated or invalid access token.</response>
+    /// <response code="403">Insufficient permissions to view this user.</response>
+    /// <response code="404">User not found.</response>
+    /// <response code="500">Internal server error occurred.</response>
+    [HttpGet("{userId}")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse<UserDto>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetUser([FromRoute] string userId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+                return BadRequest(ApiResponse.FailureResponse("User ID is required"));
+
+            _logger.LogInformation("Retrieving user: {UserId}", userId);
+
+            var result = await _userService.GetUserByIdAsync(userId);
+
+            if (result.IsSuccess)
+            {
+                _logger.LogInformation("User retrieved successfully: {UserId}", userId);
+
+                var response = ApiResponse<UserDto>.SuccessResponse(
+                    result.Value!,
+                    "User retrieved successfully");
+
+                return Ok(response);
+            }
+
+            // User not found
+            if (result.ErrorCode == "USER_NOT_FOUND")
+            {
+                _logger.LogWarning("User not found: {UserId}", userId);
+                return NotFound(ApiResponse.FailureResponse(result.ErrorMessage ?? "User not found"));
+            }
+
+            _logger.LogWarning("Failed to retrieve user {UserId}: {Error}", userId, result.ErrorMessage);
+
+            var failureResponse = ApiResponse.FailureResponse(
+                result.ErrorMessage ?? "Failed to retrieve user",
+                result.Errors);
+
+            return BadRequest(failureResponse);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error retrieving user: {UserId}", userId);
+
+            var errorResponse = ApiResponse.FailureResponse(
+                "An unexpected error occurred while retrieving user",
+                "RETRIEVAL_ERROR");
+
+            return StatusCode(StatusCodes.Status500InternalServerError, errorResponse);
+        }
+    }
+
+    /// <summary>
+    /// Retrieves a paginated list of all users with optional filtering and sorting.
+    /// Only admins can access this endpoint.
+    /// </summary>
+    /// <param name="request">Pagination, filtering, and sorting parameters.</param>
+    /// <returns>
+    /// 200 OK with paged list of users.
+    /// 401 Unauthorized if not authenticated.
+    /// 403 Forbidden if user does not have admin role.
+    /// 400 Bad Request if validation fails.
+    /// </returns>
+    /// <response code="200">Users retrieved successfully.</response>
+    /// <response code="401">Not authenticated or invalid access token.</response>
+    /// <response code="403">Admin role required.</response>
+    /// <response code="400">Validation failed - check error details.</response>
+    /// <response code="500">Internal server error occurred.</response>
+    [HttpGet]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ApiResponse<PagedResult<UserDto>>), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> GetUsers([FromQuery] GetUsersRequest request)
+    {
+        try
+        {
+            if (request == null)
+                return BadRequest(ApiResponse.FailureResponse("Request is required"));
+
+            _logger.LogInformation("Retrieving users: Page {PageNumber}, Size {PageSize}",
+                request.PageNumber, request.PageSize);
+
+            var result = await _userService.GetUsersAsync(request);
+
+            if (result.IsSuccess)
+            {
+                _logger.LogInformation("Users retrieved successfully. Retrieved {Count} out of {Total}",
+                    result.Value!.Items.Count(), result.Value.TotalCount);
+
+                var response = ApiResponse<PagedResult<UserDto>>.SuccessResponse(
+                    result.Value,
+                    "Users retrieved successfully");
+
+                return Ok(response);
+            }
+
+            _logger.LogWarning("Failed to retrieve users: {Error}", result.ErrorMessage);
+
+            var failureResponse = ApiResponse.FailureResponse(
+                result.ErrorMessage ?? "Failed to retrieve users",
+                result.Errors);
+
+            return BadRequest(failureResponse);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error retrieving users");
+
+            var errorResponse = ApiResponse.FailureResponse(
+                "An unexpected error occurred while retrieving users",
+                "RETRIEVAL_ERROR");
+
+            return StatusCode(StatusCodes.Status500InternalServerError, errorResponse);
+        }
+    }
+
+    /// <summary>
+    /// Soft deletes a user (marks as deleted without physical removal).
+    /// Users can only delete their own profile; admins can delete any user.
+    /// After deletion, the user cannot log in.
+    /// </summary>
+    /// <param name="userId">The ID of the user to delete.</param>
+    /// <returns>
+    /// 200 OK if deletion is successful.
+    /// 401 Unauthorized if not authenticated.
+    /// 403 Forbidden if user tries to delete another user's profile (and is not admin).
+    /// 404 Not Found if user does not exist.
+    /// </returns>
+    /// <response code="200">User deleted successfully.</response>
+    /// <response code="401">Not authenticated or invalid access token.</response>
+    /// <response code="403">Insufficient permissions to delete this user.</response>
+    /// <response code="404">User not found.</response>
+    /// <response code="500">Internal server error occurred.</response>
+    [HttpDelete("{userId}")]
+    [Authorize]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status404NotFound)]
+    [ProducesResponseType(typeof(ApiResponse), StatusCodes.Status500InternalServerError)]
+    public async Task<IActionResult> DeleteUser([FromRoute] string userId)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(userId))
+                return BadRequest(ApiResponse.FailureResponse("User ID is required"));
+
+            _logger.LogInformation("Deleting user: {UserId}", userId);
+
+            var result = await _userService.SoftDeleteUserAsync(userId);
+
+            if (result.IsSuccess)
+            {
+                _logger.LogInformation("User deleted successfully: {UserId}", userId);
+
+                var response = ApiResponse.SuccessResponse(
+                    "User deleted successfully");
+
+                return Ok(response);
+            }
+
+            // User not found
+            if (result.ErrorCode == "USER_NOT_FOUND")
+            {
+                _logger.LogWarning("User not found for deletion: {UserId}", userId);
+                return NotFound(ApiResponse.FailureResponse(result.ErrorMessage ?? "User not found"));
+            }
+
+            _logger.LogWarning("Failed to delete user {UserId}: {Error}", userId, result.ErrorMessage);
+
+            var failureResponse = ApiResponse.FailureResponse(
+                result.ErrorMessage ?? "Failed to delete user",
+                result.Errors);
+
+            return BadRequest(failureResponse);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Unexpected error deleting user: {UserId}", userId);
+
+            var errorResponse = ApiResponse.FailureResponse(
+                "An unexpected error occurred while deleting user",
+                "DELETION_ERROR");
 
             return StatusCode(StatusCodes.Status500InternalServerError, errorResponse);
         }

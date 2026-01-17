@@ -1,3 +1,4 @@
+using UserManagement.Shared.Models.DTOs;
 using UserManagement.Shared.Models.Entities;
 
 namespace UserManagement.Shared.Contracts.Repositories;
@@ -33,4 +34,19 @@ public interface IUserRepository : IRepository<User>
     /// <param name="phoneNumber">The phone number to check for existence.</param>
     /// <returns>True if a user with this phone number exists; false otherwise.</returns>
     Task<bool> PhoneNumberExistsAsync(string phoneNumber);
+
+    /// <summary>
+    /// Retrieves a paginated list of users with filtering and sorting support.
+    /// </summary>
+    /// <param name="request">Pagination, filtering, and sorting parameters.</param>
+    /// <returns>Paged result containing users and pagination metadata.</returns>
+    Task<PagedResult<User>> GetPagedAsync(GetUsersRequest request);
+
+    /// <summary>
+    /// Soft deletes a user by setting IsDeleted = true.
+    /// The user record is not physically deleted from the database.
+    /// </summary>
+    /// <param name="userId">The ID of the user to soft delete.</param>
+    /// <returns>True if soft deletion was successful; false if user not found.</returns>
+    Task<bool> SoftDeleteAsync(string userId);
 }

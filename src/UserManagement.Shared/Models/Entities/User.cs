@@ -64,6 +64,12 @@ public class User
     public string? PhoneNumber { get; set; }
 
     /// <summary>
+    /// User's role for role-based authorization (User or Admin).
+    /// </summary>
+    [BsonElement("role")]
+    public string Role { get; set; } = "User";
+
+    /// <summary>
     /// Indicates if the user account is soft-deleted.
     /// </summary>
     [BsonElement("isDeleted")]
