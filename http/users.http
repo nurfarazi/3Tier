@@ -39,7 +39,7 @@ Content-Type: {{contentType}}
   "email": "invalid-email",
   "password": "SecurePassword@123",
   "confirmPassword": "SecurePassword@123",
-  "phoneNumber": "+1234567890",
+  "phoneNumber": "+1234567810",
   "dateOfBirth": "1990-01-15"
 }
 

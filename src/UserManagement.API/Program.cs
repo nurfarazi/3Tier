@@ -1,4 +1,5 @@
 using Serilog;
+using FluentValidation;
 using FluentValidation.AspNetCore;
 using UserManagement.API.Middleware;
 using UserManagement.Repository;
@@ -30,6 +31,7 @@ builder.Services.AddSwaggerGen();
 
 // Validation
 builder.Services.AddFluentValidationAutoValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<UserManagement.API.Validators.RegisterUserRequestValidator>();
 // Validators will be auto-discovered through assembly scanning
 
 // Layer Registration (Dependency Injection)
