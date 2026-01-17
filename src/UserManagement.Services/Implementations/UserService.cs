@@ -1,6 +1,7 @@
 using Microsoft.Extensions.Logging;
 using UserManagement.Shared.Contracts.Repositories;
 using UserManagement.Shared.Contracts.Services;
+using UserManagement.Shared.Contracts.Validators;
 using UserManagement.Shared.Models.DTOs;
 using UserManagement.Shared.Models.Entities;
 using UserManagement.Shared.Models.Results;
@@ -15,16 +16,22 @@ namespace UserManagement.Services.Implementations;
 public class UserService : IUserService
 {
     private readonly IUserRepository _userRepository;
+    private readonly IEnumerable<IBusinessValidator<User>> _validators;
     private readonly ILogger<UserService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the UserService class.
     /// </summary>
     /// <param name="userRepository">Repository for user data access.</param>
+    /// <param name="validators">List of business validators for user entity.</param>
     /// <param name="logger">Logger for service operations.</param>
-    public UserService(IUserRepository userRepository, ILogger<UserService> logger)
+    public UserService(
+        IUserRepository userRepository, 
+        IEnumerable<IBusinessValidator<User>> validators,
+        ILogger<UserService> logger)
     {
         _userRepository = userRepository ?? throw new ArgumentNullException(nameof(userRepository));
+        _validators = validators ?? throw new ArgumentNullException(nameof(validators));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -64,54 +71,41 @@ public class UserService : IUserService
             // Business Rule: Email normalization
             var normalizedEmail = request.Email.Trim().ToLowerInvariant();
 
-            // Business Rule 1: Check if email already exists (including soft-deleted)
-            _logger.LogInformation("Checking if email already exists: {Email}", normalizedEmail);
-            var emailExists = await _userRepository.EmailExistsAsync(normalizedEmail);
-
-            if (emailExists)
+            // Create User domain entity (preliminary for validation)
+            var user = new User
             {
-                _logger.LogWarning("Registration failed: Email already exists: {Email}", normalizedEmail);
-                return Result<RegisterUserResponse>.Failure(
-                    "Email already exists",
-                    new List<string> { "A user with this email address is already registered" },
-                    "EMAIL_ALREADY_EXISTS");
-            }
+                Email = normalizedEmail,
+                FirstName = request.FirstName,
+                LastName = request.LastName,
+                DisplayName = request.DisplayName,
+                DateOfBirth = request.DateOfBirth,
+                PhoneNumber = request.PhoneNumber,
+                IsDeleted = false
+            };
 
-            // Business Rule: Check if mobile number already exists (if provided)
-            if (!string.IsNullOrWhiteSpace(request.PhoneNumber))
+            // Run business validators
+            // This pattern allows us to easily add/remove business rules and reuse them for Updates
+            foreach (var validator in _validators)
             {
-                _logger.LogInformation("Checking if phone number already exists: {PhoneNumber}", request.PhoneNumber);
-                var phoneExists = await _userRepository.PhoneNumberExistsAsync(request.PhoneNumber);
-
-                if (phoneExists)
+                var validationResult = await validator.ValidateAsync(user);
+                if (!validationResult.IsSuccess)
                 {
-                    _logger.LogWarning("Registration failed: Phone number already exists: {PhoneNumber}", request.PhoneNumber);
+                    _logger.LogWarning("Registration validation failed: {ErrorCode} - {ErrorMessage}", 
+                        validationResult.ErrorCode, validationResult.ErrorMessage);
+
                     return Result<RegisterUserResponse>.Failure(
-                        "Phone number already exists",
-                        new List<string> { "A user with this phone number is already registered" },
-                        "PHONE_ALREADY_EXISTS");
+                        validationResult.ErrorMessage ?? "Business rule violation",
+                        validationResult.Errors,
+                        validationResult.ErrorCode);
                 }
             }
 
             // Hash password using BCrypt
             _logger.LogInformation("Hashing password for user: {Email}", normalizedEmail);
             var passwordHash = BCrypt.Net.BCrypt.HashPassword(request.Password, workFactor: 12);
-
-            // Create User domain entity
-            _logger.LogInformation("Creating user entity for email: {Email}", normalizedEmail);
-            var user = new User
-            {
-                Email = normalizedEmail,
-                PasswordHash = passwordHash,
-                FirstName = request.FirstName,
-                LastName = request.LastName,
-                DisplayName = request.DisplayName,
-                DateOfBirth = request.DateOfBirth,
-                PhoneNumber = request.PhoneNumber,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow,
-                IsDeleted = false
-            };
+            user.PasswordHash = passwordHash;
+            user.CreatedAt = DateTime.UtcNow;
+            user.UpdatedAt = DateTime.UtcNow;
 
             // Persist to database
             _logger.LogInformation("Persisting user to database: {Email}", normalizedEmail);

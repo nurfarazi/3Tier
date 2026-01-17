@@ -3,8 +3,10 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using UserManagement.Services.Implementations;
 using UserManagement.Shared.Contracts.Repositories;
+using UserManagement.Shared.Contracts.Validators;
 using UserManagement.Shared.Models.DTOs;
 using UserManagement.Shared.Models.Entities;
+using UserManagement.Shared.Models.Results;
 using Xunit;
 
 namespace UserManagement.Services.Tests;
@@ -17,6 +19,8 @@ namespace UserManagement.Services.Tests;
 public class UserServiceTests
 {
     private readonly Mock<IUserRepository> _mockUserRepository;
+    private readonly Mock<IBusinessValidator<User>> _mockEmailValidator;
+    private readonly Mock<IBusinessValidator<User>> _mockPhoneValidator;
     private readonly Mock<ILogger<UserService>> _mockLogger;
     private readonly UserService _userService;
 
@@ -27,8 +31,25 @@ public class UserServiceTests
     public UserServiceTests()
     {
         _mockUserRepository = new Mock<IUserRepository>();
+        _mockEmailValidator = new Mock<IBusinessValidator<User>>();
+        _mockPhoneValidator = new Mock<IBusinessValidator<User>>();
         _mockLogger = new Mock<ILogger<UserService>>();
-        _userService = new UserService(_mockUserRepository.Object, _mockLogger.Object);
+
+        var validators = new List<IBusinessValidator<User>>
+        {
+            _mockEmailValidator.Object,
+            _mockPhoneValidator.Object
+        };
+
+        _userService = new UserService(_mockUserRepository.Object, validators, _mockLogger.Object);
+
+        // Default setup: validators return success
+        _mockEmailValidator
+            .Setup(v => v.ValidateAsync(It.IsAny<User>()))
+            .ReturnsAsync(Result.Success());
+        _mockPhoneValidator
+            .Setup(v => v.ValidateAsync(It.IsAny<User>()))
+            .ReturnsAsync(Result.Success());
     }
 
     /// <summary>
@@ -59,10 +80,7 @@ public class UserServiceTests
             CreatedAt = DateTime.UtcNow
         };
 
-        // Mock: Email does not exist
-        _mockUserRepository
-            .Setup(repo => repo.EmailExistsAsync(request.Email))
-            .ReturnsAsync(false);
+        // Mock: AddAsync returns the user with ID
 
         // Mock: AddAsync returns the user with ID
         _mockUserRepository
@@ -84,11 +102,14 @@ public class UserServiceTests
         result.Value.LastName.Should().Be(request.LastName);
         result.Value.UserId.Should().NotBeNullOrEmpty();
 
-        // Verify repository was called correctly
-        _mockUserRepository.Verify(
-            repo => repo.EmailExistsAsync(request.Email),
-            Times.Once,
-            "Should check if email exists");
+        // Verify validators were called
+        _mockEmailValidator.Verify(
+            v => v.ValidateAsync(It.IsAny<User>()),
+            Times.Once);
+
+        _mockPhoneValidator.Verify(
+            v => v.ValidateAsync(It.IsAny<User>()),
+            Times.Once);
 
         _mockUserRepository.Verify(
             repo => repo.AddAsync(It.IsAny<User>()),
@@ -112,10 +133,13 @@ public class UserServiceTests
             LastName = "Doe"
         };
 
-        // Mock: Email already exists
-        _mockUserRepository
-            .Setup(repo => repo.EmailExistsAsync(request.Email))
-            .ReturnsAsync(true);
+        // Mock: Email validator returns failure
+        _mockEmailValidator
+            .Setup(v => v.ValidateAsync(It.IsAny<User>()))
+            .ReturnsAsync(Result.Failure(
+                "Email already exists",
+                new List<string> { "A user with this email address is already registered" },
+                "EMAIL_ALREADY_EXISTS"));
 
         // Act
         var result = await _userService.RegisterUserAsync(request);
@@ -167,9 +191,9 @@ public class UserServiceTests
         // Assert
         result.IsSuccess.Should().BeTrue();
 
-        // Verify EmailExistsAsync was called with correct email
-        _mockUserRepository.Verify(
-            repo => repo.EmailExistsAsync(request.Email),
+        // Verify validators were called
+        _mockEmailValidator.Verify(
+            v => v.ValidateAsync(It.IsAny<User>()),
             Times.Once);
 
         // Verify AddAsync was called with User entity containing correct data
@@ -196,9 +220,9 @@ public class UserServiceTests
         result.IsSuccess.Should().BeFalse();
         result.ErrorMessage.Should().Contain("request is required");
 
-        // Verify repository was not called
-        _mockUserRepository.Verify(
-            repo => repo.EmailExistsAsync(It.IsAny<string>()),
+        // Verify validators were not called
+        _mockEmailValidator.Verify(
+            v => v.ValidateAsync(It.IsAny<User>()),
             Times.Never);
     }
 
@@ -269,10 +293,6 @@ public class UserServiceTests
         User? capturedUser = null;
 
         _mockUserRepository
-            .Setup(repo => repo.EmailExistsAsync(It.IsAny<string>()))
-            .ReturnsAsync(false);
-
-        _mockUserRepository
             .Setup(repo => repo.AddAsync(It.IsAny<User>()))
             .Callback<User>(u => capturedUser = u)
             .ReturnsAsync((User user) =>
@@ -308,8 +328,8 @@ public class UserServiceTests
             LastName = "User"
         };
 
-        _mockUserRepository
-            .Setup(repo => repo.EmailExistsAsync(It.IsAny<string>()))
+        _mockEmailValidator
+            .Setup(v => v.ValidateAsync(It.IsAny<User>()))
             .ThrowsAsync(new Exception("Database connection failed"));
 
         // Act

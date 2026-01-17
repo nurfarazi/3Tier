@@ -1,6 +1,36 @@
 namespace UserManagement.Shared.Models.Results;
 
 /// <summary>
+/// Non-generic result pattern for service layer operations.
+/// </summary>
+public class Result
+{
+    public bool IsSuccess { get; }
+    public string? ErrorMessage { get; }
+    public List<string> Errors { get; }
+    public string? ErrorCode { get; }
+
+    protected Result(bool isSuccess, string? errorMessage, List<string>? errors = null, string? errorCode = null)
+    {
+        IsSuccess = isSuccess;
+        ErrorMessage = errorMessage;
+        Errors = errors ?? new List<string>();
+        ErrorCode = errorCode;
+    }
+
+    public static Result Success() => new(true, null, null, null);
+
+    public static Result Failure(string errorMessage, string? errorCode = null) =>
+        new(false, errorMessage, new List<string> { errorMessage }, errorCode);
+
+    public static Result Failure(string errorMessage, List<string> errors, string? errorCode = null) =>
+        new(false, errorMessage, errors, errorCode);
+
+    public static Result Failure(Exception exception, string? errorCode = null) =>
+        new(false, exception.Message, new List<string> { exception.ToString() }, errorCode ?? "EXCEPTION");
+}
+
+/// <summary>
 /// Generic result pattern for service layer operations.
 /// Encapsulates success or failure of business operations without using exceptions for flow control.
 /// This pattern is commonly used in domain-driven design to explicitly represent operation outcomes.
