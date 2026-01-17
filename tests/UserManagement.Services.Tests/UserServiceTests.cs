@@ -3,6 +3,7 @@ using Microsoft.Extensions.Logging;
 using Moq;
 using UserManagement.Services.Implementations;
 using UserManagement.Shared.Contracts.Repositories;
+using UserManagement.Shared.Contracts.Services;
 using UserManagement.Shared.Contracts.Validators;
 using UserManagement.Shared.Models.DTOs;
 using UserManagement.Shared.Models.Entities;
@@ -21,6 +22,7 @@ public class UserServiceTests
     private readonly Mock<IUserRepository> _mockUserRepository;
     private readonly Mock<IBusinessValidator<User>> _mockEmailValidator;
     private readonly Mock<IBusinessValidator<User>> _mockPhoneValidator;
+    private readonly Mock<IEmailService> _mockEmailService;
     private readonly Mock<ILogger<UserService>> _mockLogger;
     private readonly UserService _userService;
 
@@ -33,6 +35,7 @@ public class UserServiceTests
         _mockUserRepository = new Mock<IUserRepository>();
         _mockEmailValidator = new Mock<IBusinessValidator<User>>();
         _mockPhoneValidator = new Mock<IBusinessValidator<User>>();
+        _mockEmailService = new Mock<IEmailService>();
         _mockLogger = new Mock<ILogger<UserService>>();
 
         var validators = new List<IBusinessValidator<User>>
@@ -41,7 +44,11 @@ public class UserServiceTests
             _mockPhoneValidator.Object
         };
 
-        _userService = new UserService(_mockUserRepository.Object, validators, _mockLogger.Object);
+        _userService = new UserService(
+            _mockUserRepository.Object, 
+            validators, 
+            _mockEmailService.Object, 
+            _mockLogger.Object);
 
         // Default setup: validators return success
         _mockEmailValidator
@@ -115,6 +122,11 @@ public class UserServiceTests
             repo => repo.AddAsync(It.IsAny<User>()),
             Times.Once,
             "Should add user to repository");
+
+        _mockEmailService.Verify(
+            s => s.SendWelcomeEmailAsync(It.IsAny<User>()),
+            Times.Once,
+            "Should send welcome email");
     }
 
     /// <summary>
@@ -155,6 +167,11 @@ public class UserServiceTests
             repo => repo.AddAsync(It.IsAny<User>()),
             Times.Never,
             "Should not add user when email already exists");
+
+        _mockEmailService.Verify(
+            s => s.SendWelcomeEmailAsync(It.IsAny<User>()),
+            Times.Never,
+            "Should not send email when validation fails");
     }
 
     /// <summary>
